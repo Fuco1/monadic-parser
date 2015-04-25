@@ -86,15 +86,15 @@
 ;; Message -> Reply u a -> Reply u a
 (defun mp--merge-error-reply (msg1 reply)
   (mp-with-reply reply
-    (-lambda ([_ value state msg2]) ;; Ok
+    (-lambda ([_Ok value state msg2])
       (mp-ok value state (mp--merge-messages msg1 msg2)))
-    (-lambda ([_ msg2]) ;; Error
+    (-lambda ([_Error msg2])
       (mp-error (mp--merge-messages msg1 msg2)))))
 
 ;; Message -> Message -> Message
 (defun mp--merge-messages (msg1 msg2)
-  (-let (([_ _   _      first1] msg1) ;; Message
-         ([_ pos input first2] msg2)) ;; Message
+  (-let* (([_Message _   _      first1] msg1)
+          ([_Message pos input first2] msg2))
     (mp-message pos input (-concat first1 first2))))
 
 ;; Parser u a -> (a -> Parser u b) -> Parser u b
@@ -102,27 +102,24 @@
   "Use the result of first PARSER to construct another using FUN."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
-      (-lambda ([_ reply]) ;; Consumed
+      (-lambda ([_Consumed reply])
         (mp-consumed
          (mp-with-reply reply
-           (-lambda ([_ value state1 msg1]) ;; Ok
+           (-lambda ([_Ok value state1 msg1])
              (mp-with-consumed (mp-run (funcall fun value) state1)
-               (-lambda ([_ reply2]) ;; Consumed
+               (-lambda ([_Consumed reply2])
                  reply2) ;; unwrap one layer of Consumed
-               (-lambda ([_ reply2]) ;; Empty
+               (-lambda ([_Empty reply2])
                  (mp--merge-error-reply msg1 reply2))))
-           (lambda (err) ;; Error
-             err))))
-      (-lambda ([_ reply]) ;; Empty
+           (lambda (err) err))))
+      (-lambda ([_Empty reply])
         (mp-with-reply reply
-          (-lambda ([_ value state1 msg1]) ;; Ok
+          (-lambda ([_Ok value state1 msg1])
             (mp-with-consumed (mp-run (funcall fun value) state1)
-              (-lambda (consumed) ;; Consumed
-                consumed)
-              (-lambda ([_ reply2]) ;; Empty
+              (-lambda (consumed) consumed)
+              (-lambda ([_Empty reply2])
                 (mp-empty (mp--merge-error-reply msg1 reply2)))))
-          (lambda (err) ;; Error
-            (mp-empty err)))))))
+          (lambda (err) (mp-empty err)))))))
 
 ;; Parser u a -> Parser u b -> Parser u b
 (defun mp-then (first another)
@@ -139,13 +136,13 @@ parser."
   (lambda (state)
     (mp-with-consumed (mp-run first state)
       (lambda (consumed) consumed)
-      (-lambda ([_ reply]) ;; Empty
+      (-lambda ([_Empty reply])
         (mp-with-reply reply
           (lambda (ok) (mp-empty ok))
-          (-lambda ([_ msg]) ;; Error
+          (-lambda ([_Error msg])
             (mp-with-consumed (mp-run second state)
               (lambda (consumed) consumed)
-              (-lambda ([_ reply]) ;; Empty
+              (-lambda ([_Empty reply])
                 (mp-empty (mp--merge-error-reply msg reply))))))))))
 
 ;; Parser u a -> Parser u a
@@ -154,13 +151,13 @@ parser."
 
 Useful for arbitrary look-ahead."
   (lambda (state)
-    (-let* (([_ _ pos] state))
+    (-let* (([_State _ pos] state))
       (mp-with-consumed (mp-run parser state)
-        (-lambda ([_ reply])  ;; Consumed
+        (-lambda ([_Consumed reply])
           (mp-with-reply reply
-            (lambda (ok) ;; Ok
+            (lambda (ok)
               (mp-consumed ok))
-            (-lambda ([_ [_ _ input expected]]) ;; Error
+            (-lambda ([_Error [_Message _ input expected]])
               (mp-empty (mp-error (mp-message pos input expected))))))
         (lambda (empty) empty)))))
 
@@ -169,7 +166,7 @@ Useful for arbitrary look-ahead."
 
 ;; Message -> String -> Message
 (defun mp--expect (msg expected)
-  (-let (([_ pos input _] msg))
+  (-let (([_Message pos input _] msg))
     (mp-message pos input (list expected))))
 
 ;; Parser u a -> String -> Parser u a
@@ -178,11 +175,11 @@ Useful for arbitrary look-ahead."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
       (lambda (consumed) consumed)
-      (-lambda ([_ reply])
+      (-lambda ([_Empty reply])
         (mp-with-reply reply
-          (-lambda ([_ value state1 msg])
+          (-lambda ([_Ok value state1 msg])
             (mp-empty (mp-ok value state1 (mp--expect msg expected))))
-          (-lambda ([_ msg])
+          (-lambda ([_Error msg])
             (mp-empty (mp-error (mp--expect msg expected)))))))))
 
 ;; (a -> Bool) -> Parser u a
@@ -191,7 +188,7 @@ Useful for arbitrary look-ahead."
   ;; (mp-item) eats an item, so the function we bind to should create
   ;; a parser which does not consume any input, returning value based
   ;; on the predicate.  mp-return does the job!
-  (-lambda ([_ pos (c . cs) user])
+  (-lambda ([_State pos (c . cs) user])
     (cond
      ((not c)
       (mp-empty (mp-error (mp-message pos "end of input" []))))
