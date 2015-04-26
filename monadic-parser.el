@@ -147,8 +147,23 @@
   "Sequence two parsers, ignoring result from the first."
   (mp-bind first (lambda (_) another)))
 
+;; All this fuss around or is due to need of lazy evaluation of the
+;; rest of the parsers.  We must not evaluate them right away in the
+;; case first parser succeeds.
+
+;; [Parser u a] -> Parser u a
+(defmacro mp-or (&rest parsers)
+  "Try parsers in sequence until some consumes input or succeeds."
+  `(mp--or1 ,parsers))
+
+(defmacro mp--or1 (parsers)
+  (cond
+   ((not (cdr parsers))
+    (car parsers))
+   (t `(mp--or ,(car parsers) #'(lambda (s) (mp-run `,(mp--or1 ,(cdr parsers)) s))))))
+
 ;; Parser u a -> Parser u a -> Parser u a
-(defun mp-or (first second)
+(defun mp--or (first second)
   "Implement choice.
 
 Try FIRST parser.  If it succeeds, return its return value.  If
