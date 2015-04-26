@@ -274,8 +274,8 @@ Useful for arbitrary look-ahead."
 (defun mp-many1 (parser)
   "Match PARSER zero or more times and return its results as list."
   (mp-do
-   (:= x parser)
-   (:= xs (mp-many parser))
+   (x := parser)
+   (xs := (mp-many parser))
    (mp-return (cons x xs))))
 
 (defun mp-skip-many (parser)
@@ -341,47 +341,50 @@ Useful for arbitrary look-ahead."
            ;; TODO: abstract the error message creation
            (t (mp-empty (mp-error (mp-message pos (char-to-string x) (list string)))))))))))
 
-(defun mp--edebug-is-arrow (symbol)
-  "Check if the symbol is <-"
-  (eq symbol '<-))
-
-(defun mp--edebug-is-let (symbol)
-  "Check if the symbol is let or let*"
-  (memq symbol '(let let*)))
-
 (defun mp--edebug-is-assign (symbol)
   "Check if the symbol is :="
   (eq symbol :=))
 
+(defun mp--do-substitute (form)
+  (cond
+   ((and (listp form) (eq (car form) 'let))
+    `(-let ,(cadr form)
+       (mp-do ,@(cddr form))))
+   ((and (listp form) (eq (car form) 'let*))
+    `(-let* ,(cadr form)
+       (mp-do ,@(cddr form))))
+   ((and (listp form) (eq (car form) 'if))
+    `(if ,(nth 1 form)
+         (mp-do ,(nth 2 form))
+       (mp-do ,@(nthcdr 3 form))))
+   (t form)))
+
+;; (mp-run-string (mp-do
+;;                 (a := (mp-char ?a))
+;;                 (if (eq a ?a)
+;;                     (mp-return "Success")
+;;                   (let ((r 8))
+;;                     (mp-char ?b)
+;;                     (mp-return (+ r a))))
+;;                 (mp-return "Total return"))
+;;                "abcd")
+
 (defmacro mp-do (&rest things)
   "Compose parsers and forms, binding variables automatically."
-  (declare (debug (&rest [&or [sexp mp--edebug-is-arrow form]
-                              (mp--edebug-is-assign sexp form)
-                              (mp--edebug-is-let (&rest (sexp form)))
+  (declare (debug (&rest [&or (sexp mp--edebug-is-assign form)
                               form])))
-  (cond
-   ((eq (cadr things) '<-)
-    `(mp-bind
-      ,(caddr things)
-      (-lambda (,(car things))
-        (mp-do ,@(cdddr things)))))
-   ((eq (caar things) ':=)
-    `(mp-bind
-      ,(caddar things)
-      (-lambda (,(cadar things))
-        (mp-do ,@(cdr things)))))
-   ((eq (caar things) 'let)
-    `(-let ,(cadar things)
-       (mp-do ,@(cdr things))))
-   ((eq (caar things) 'let*)
-    `(-let* ,(cadar things)
-       (mp-do ,@(cdr things))))
-   ((car things)
-    (if (cdr things)
-        `(mp-then
-          ,(car things)
-          (mp-do ,@(cdr things)))
-      (car things)))))
+  (let ((head (car things)))
+    (cond
+     ((eq (cadr head) ':=)
+      `(mp-bind
+        ,(mp--do-substitute (nth 2 head))
+        (-lambda (,(car head))
+          (mp-do ,@(cdr things)))))
+     ((cdr things)
+      `(mp-then
+        ,(mp--do-substitute (car things))
+        (mp-do ,@(cdr things))))
+     (t (mp--do-substitute (car things))))))
 
 (defun my-parse-symbol ()
   (mp-fmap (lambda (x) (intern (apply 'string x))) (mp-many1 (mp-letter))))
@@ -391,8 +394,8 @@ Useful for arbitrary look-ahead."
 
 (defun my-parse-number ()
   (mp-do
-   (:= integer (mp-many1 (mp-digit)))
-   (:= decimal (mp-or
+   (integer := (mp-many1 (mp-digit)))
+   (decimal := (mp-or
                 (mp-then (mp-char ?.) (mp-many1 (mp-digit)))
                 (mp-return nil)))
    (mp-return (if decimal
@@ -412,7 +415,7 @@ Useful for arbitrary look-ahead."
 (defun my-parse-list ()
   (mp-do
    (mp-char ?\()
-   (:= s (mp-many (my-parse-lisp-item)))
+   (s := (mp-many (my-parse-lisp-item)))
    (mp-char ?\))
    (mp-return s)))
 
@@ -428,15 +431,12 @@ Useful for arbitrary look-ahead."
 ;; (mp-run-string (my-parse-list) "(a(a[]c))")
 ;; (mp-run-string (my-parse-list) "(a (a [] c))")
 ;; (mp-run-string (my-parse-symbol) "abc")
+
 ;; (mp-run-string (my-parse-list) "(aasd (asd 12 bsasd 20.45) das)")
 
+;; (mp-run-string (my-parse-number) "20.456")
+
 ;; (mp-run-string (mp-many (mp-char ?a)) "aaaab")
-;; (mp-run-string (mp-do
-;;                 (mp-char ?a)
-;;                 (mp-char ?b)
-;;                 (let ((r 8)))
-;;                 (mp-return r))
-;;                "abcd")
 
 ;; (mp-run-string (mp-do
 ;;                 c <- (mp-char ?a)
