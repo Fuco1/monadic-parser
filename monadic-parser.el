@@ -229,8 +229,60 @@ Useful for arbitrary look-ahead."
      ((not c)
       (mp-empty (mp-error (mp-message pos "end of input" nil))))
      ((funcall predicate c)
+      ;; TODO: abstract creating empty error
       (mp-consumed (mp-ok c (mp-state (1+ pos) cs user) (mp-message pos "" nil))))
      (t (mp-empty (mp-error (mp-message pos (char-to-string c) nil)))))))
+
+(defun mp--walk-many (accumulator default parser ok)
+  (-let* (([_Ok value state user] ok)
+          (re (funcall accumulator value default)))
+    (cl-do ((result (mp-run parser state) (mp-run parser state)))
+        (nil)
+      (mp-with-consumed result
+        (-lambda ([_Consumed reply])
+          (mp-with-reply reply
+            (-lambda ([_Ok value state1 msg])
+              (setq re (funcall accumulator value re))
+              (setq state state1))
+            (lambda (err) (cl-return err))))
+        (-lambda ([_Empty reply])
+          (mp-with-reply reply
+            (lambda (ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
+            (-lambda ([_Error msg]) (cl-return (mp-ok re state msg)))))))))
+
+;; (a -> b -> b) -> b -> Parser u a -> Parser u b
+(defun mp-many-accum (accumulator default parser)
+  "Match PARSER zero or more times and accumulate its results using ACCUMULATOR."
+  (lambda (state)
+    (mp-with-consumed (mp-run parser state)
+      (-lambda ([_Consumed reply])
+        (mp-consumed
+         (mp-with-reply reply
+           (lambda (ok) (mp--walk-many accumulator default parser ok))
+           (lambda (err) err))))
+      (-lambda ([_Empty reply])
+        (mp-with-reply reply
+          (lambda (ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
+          (-lambda ([_Error msg]) (mp-empty (mp-ok nil state msg))))))))
+
+;; (mp-run-string (mp-spaces) "   asd")
+
+(defun mp-many (parser)
+  "Match PARSER zero or more times and return its results as list."
+  (mp-fmap 'nreverse (mp-many-accum 'cons nil parser)))
+
+(defun mp-many1 (parser)
+  "Match PARSER zero or more times and return its results as list."
+  (mp-do
+   (:= x parser)
+   (:= xs (mp-many parser))
+   (mp-return (cons x xs))))
+
+(defun mp-skip-many (parser)
+  "Apply PARSER zero or more times, ignoring its results."
+  (mp-do
+   (mp-many-accum (lambda (_ _) nil) nil parser)
+   (mp-return nil)))
 
 ;; Char -> Parser u Char
 (defun mp-char (char)
