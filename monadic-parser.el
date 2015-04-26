@@ -1,5 +1,5 @@
 ;; -*- lexical-binding: t -*-
-(require 'cl)
+(eval-when-compile (require 'cl))
 ;; data Message = (Int, String, [String]) -- position, unexpected input, first set (expected inputs)
 (defun mp-message (pos input first)
   (vector 'Message pos input first))
@@ -234,20 +234,20 @@ Useful for arbitrary look-ahead."
      (t (mp-empty (mp-error (mp-message pos (char-to-string c) nil)))))))
 
 (defun mp--walk-many (accumulator default parser ok)
-  (-let* (([_Ok value state user] ok)
+  (-let* (([_Ok value state _msg] ok)
           (re (funcall accumulator value default)))
     (cl-do ((result (mp-run parser state) (mp-run parser state)))
         (nil)
       (mp-with-consumed result
         (-lambda ([_Consumed reply])
           (mp-with-reply reply
-            (-lambda ([_Ok value state1 msg])
+            (-lambda ([_Ok value state1 _msg])
               (setq re (funcall accumulator value re))
               (setq state state1))
             (lambda (err) (cl-return err))))
         (-lambda ([_Empty reply])
           (mp-with-reply reply
-            (lambda (ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
+            (lambda (_ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
             (-lambda ([_Error msg]) (cl-return (mp-ok re state msg)))))))))
 
 ;; (a -> b -> b) -> b -> Parser u a -> Parser u b
@@ -262,7 +262,7 @@ Useful for arbitrary look-ahead."
            (lambda (err) err))))
       (-lambda ([_Empty reply])
         (mp-with-reply reply
-          (lambda (ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
+          (lambda (_ok) (error "Combinator `mp-many' is applied to a parser that accepts an empty string."))
           (-lambda ([_Error msg]) (mp-empty (mp-ok nil state msg))))))))
 
 ;; (mp-run-string (mp-spaces) "   asd")
@@ -281,7 +281,7 @@ Useful for arbitrary look-ahead."
 (defun mp-skip-many (parser)
   "Apply PARSER zero or more times, ignoring its results."
   (mp-do
-   (mp-many-accum (lambda (_ _) nil) nil parser)
+   (mp-many-accum (lambda (_1 _2) nil) nil parser)
    (mp-return nil)))
 
 ;; Char -> Parser u Char
@@ -300,7 +300,7 @@ Useful for arbitrary look-ahead."
 
 (defun mp-space ()
   "Match any char in [:space:]."
-  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:space:]]" (char-to-string x)))) "whitespace"))
+  (mp-label (mp-satisfies (lambda (x) (string-match-p "[ \t\n]" (char-to-string x)))) "whitespace"))
 
 (defun mp-spaces ()
   "Match any sequence of whitespace."
@@ -313,7 +313,7 @@ Useful for arbitrary look-ahead."
   "Create a parser matching STRING."
   (let ((tokens (string-to-list string)))
     (if (not tokens)
-        (lambda (state) (mp-return nil))
+        (lambda (_state) (mp-return nil))
       (lambda (state)
         (-let* (([_State pos stream user] state)
                 (token (car tokens))
