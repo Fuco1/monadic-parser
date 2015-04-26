@@ -292,15 +292,15 @@ Useful for arbitrary look-ahead."
 ;; Parser u Char
 (defun mp-letter ()
   "Match any char in [:alpha:]."
-  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:alpha:]]" (char-to-string x)))) "letter"))
+  (mp-label (mp-satisfies (lambda (x) (eq (char-syntax x) ?w))) "letter"))
 
 (defun mp-digit ()
   "Match any char in [:digit:]."
-  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:digit:]]" (char-to-string x)))) "digit"))
+  (mp-label (mp-satisfies (lambda (x) (and (<= 48 x) (<= 57 x)))) "digit"))
 
 (defun mp-space ()
-  "Match any char in [:space:]."
-  (mp-label (mp-satisfies (lambda (x) (string-match-p "[ \t\n]" (char-to-string x)))) "whitespace"))
+  "Match any whitespace character: space, tab, newline or carriage return."
+  (mp-label (mp-satisfies (lambda (x) (memq x '(32 10 9 12)))) "whitespace"))
 
 (defun mp-spaces ()
   "Match any sequence of whitespace."
