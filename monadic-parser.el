@@ -341,6 +341,45 @@ Useful for arbitrary look-ahead."
            ;; TODO: abstract the error message creation
            (t (mp-empty (mp-error (mp-message pos (char-to-string x) (list string)))))))))))
 
-;; (mp-run-string (mp-char ?a) "abcd")
-;; (mp-run-string (mp-then (mp-char ?a) (mp-or (mp-char ?c) (mp-char ?d))) "abcd")
-;; (mp-run-string (mp-string "abd") "abda")
+(defun mp--edebug-is-arrow (symbol)
+  "Check if the symbol is <-"
+  (eq symbol '<-))
+
+(defun mp--edebug-is-let (symbol)
+  "Check if the symbol is let or let*"
+  (memq symbol '(let let*)))
+
+(defun mp--edebug-is-assign (symbol)
+  "Check if the symbol is :="
+  (eq symbol :=))
+
+(defmacro mp-do (&rest things)
+  "Compose parsers and forms, binding variables automatically."
+  (declare (debug (&rest [&or [sexp mp--edebug-is-arrow form]
+                              (mp--edebug-is-assign sexp form)
+                              (mp--edebug-is-let (&rest (sexp form)))
+                              form])))
+  (cond
+   ((eq (cadr things) '<-)
+    `(mp-bind
+      ,(caddr things)
+      (-lambda (,(car things))
+        (mp-do ,@(cdddr things)))))
+   ((eq (caar things) ':=)
+    `(mp-bind
+      ,(caddar things)
+      (-lambda (,(cadar things))
+        (mp-do ,@(cdr things)))))
+   ((eq (caar things) 'let)
+    `(-let ,(cadar things)
+       (mp-do ,@(cdr things))))
+   ((eq (caar things) 'let*)
+    `(-let* ,(cadar things)
+       (mp-do ,@(cdr things))))
+   ((car things)
+    (if (cdr things)
+        `(mp-then
+          ,(car things)
+          (mp-do ,@(cdr things)))
+      (car things)))))
+
