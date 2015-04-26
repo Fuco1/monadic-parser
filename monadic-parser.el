@@ -102,7 +102,7 @@
 ;; a -> Parser u a
 (defun mp-return (value)
   "Create a parser returning VALUE while not consuming any input."
-  (lambda (state) (mp-empty (mp-ok value state (mp-message (mp-state-pos state) "" nil)))))
+  (lambda (state) (mp-empty (mp-ok value state (mp-message (mp-state-position state) "" nil)))))
 
 ;; Message -> Reply u a -> Reply u a
 (defun mp--merge-error-reply (msg1 reply)
