@@ -1,4 +1,5 @@
 ;; -*- lexical-binding: t -*-
+(require 'cl)
 ;; data Message = (Int, String, [String]) -- position, unexpected input, first set (expected inputs)
 (defun mp-message (pos input first)
   (vector 'Message pos input first))
@@ -201,5 +202,39 @@ Useful for arbitrary look-ahead."
   "Create a parser matching CHAR."
   (mp-label (mp-satisfies (lambda (x) (eq char x))) (char-to-string char)))
 
+;; String -> Parser u String
+(defun mp-string (string)
+  "Create a parser matching STRING."
+  (let ((tokens (string-to-list string)))
+    (if (not tokens)
+        (lambda (state) (mp-return nil))
+      (lambda (state)
+        (-let* (([_State pos stream user] state)
+                (token (car tokens))
+                (x (car stream)))
+          (cond
+           ((and tokens (not x))
+            ;; TODO: abstract the error message creation
+            (mp-empty (mp-error (mp-message pos "end of input" (list string)))))
+           ((eq token x)
+            (mp-consumed
+             (progn
+               (cl-do* ((tokens (cdr tokens) (cdr tokens))
+                        (stream (cdr stream) (cdr stream))
+                        (token (car tokens) (car tokens))
+                        (x (car stream) (car stream))
+                        (pos (1+ pos) (1+ pos)))
+                   (nil)
+                 (cond
+                  ((not tokens)
+                   (cl-return (mp-ok string (mp-state pos stream user) (mp-message pos "" nil))))
+                  ((not x)
+                   (cl-return (mp-error (mp-message pos "end of input" (list string)))))
+                  ((not (eq token x))
+                   (cl-return (mp-error (mp-message pos (char-to-string x) (list string))))))))))
+           ;; TODO: abstract the error message creation
+           (t (mp-empty (mp-error (mp-message pos (char-to-string x) (list string)))))))))))
+
 ;; (mp-run-string (mp-char ?a) "abcd")
 ;; (mp-run-string (mp-then (mp-char ?a) (mp-or (mp-char ?c) (mp-char ?d))) "abcd")
+;; (mp-run-string (mp-string "abd") "abda")
