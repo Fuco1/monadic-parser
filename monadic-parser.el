@@ -383,3 +383,84 @@ Useful for arbitrary look-ahead."
           (mp-do ,@(cdr things)))
       (car things)))))
 
+(defun my-parse-symbol ()
+  (mp-fmap (lambda (x) (intern (apply 'string x))) (mp-many1 (mp-letter))))
+
+(defun my-parse-integer ()
+  (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))
+
+(defun my-parse-number ()
+  (mp-do
+   (:= integer (mp-many1 (mp-digit)))
+   (:= decimal (mp-or
+                (mp-then (mp-char ?.) (mp-many1 (mp-digit)))
+                (mp-return nil)))
+   (mp-return (if decimal
+                  (string-to-number (concat integer "." decimal))
+                (string-to-number (apply 'string integer))))))
+
+;; (mp-run-string (my-parse-number) "10.34u")
+
+(defun my-parse-lisp-item ()
+  (mp-do
+   (mp-spaces)
+   (mp-or
+    (my-parse-symbol)
+    (my-parse-number)
+    (my-parse-list))))
+
+(defun my-parse-list ()
+  (mp-do
+   (mp-char ?\()
+   (:= s (mp-many (my-parse-lisp-item)))
+   (mp-char ?\))
+   (mp-return s)))
+
+;; (mp-run-string (mp-do
+;;                 (assign c (mp-char ?a))
+;;                 (assign d (mp-char ?b))
+;;                 (mp-return (string c d)))
+;;                "abcd")
+
+;; (mp-run-string (my-parse-lisp-item) "(a(a!))")
+;; (mp-run-string (my-parse-list) "(a(!))")
+;; (mp-run-string (my-parse-list) "()")
+;; (mp-run-string (my-parse-list) "(a(a[]c))")
+;; (mp-run-string (my-parse-list) "(a (a [] c))")
+;; (mp-run-string (my-parse-symbol) "abc")
+;; (mp-run-string (my-parse-list) "(aasd (asd 12 bsasd 20.45) das)")
+
+;; (mp-run-string (mp-many (mp-char ?a)) "aaaab")
+;; (mp-run-string (mp-do
+;;                 (mp-char ?a)
+;;                 (mp-char ?b)
+;;                 (let ((r 8)))
+;;                 (mp-return r))
+;;                "abcd")
+
+;; (mp-run-string (mp-do
+;;                 c <- (mp-char ?a)
+;;                 d <- (mp-char ?b)
+;;                 (let ((r (string c d)))
+;;                   (mp-return r)))
+;;                "abcd")
+
+;; (mp-run-string (mp-do
+;;                 c <- (mp-char ?a)
+;;                 d <- (mp-char ?b)
+;;                 (mp-return (string c d)))
+;;                "abcd")
+
+;; (mp-run-string (mp-do
+;;                 [a &rest b] <- (mp-string "ab")
+;;                 c <- (mp-char ?c)
+;;                 (mp-return (format "%c%s%c" a b c)))
+;;                "abcd")
+
+;; ;; (mp-run-string (mp-char ?a) "abcd")
+;; ;; (mp-run-string (mp-then (mp-char ?a) (mp-or (mp-char ?c) (mp-char ?b))) "abcd")
+;; ;; (mp-run-string (mp-string "abd") "abda")
+;; (mp-run-string (mp-or (mp-string "abc") (mp-string "def")) "abcdef")
+;; (mp-run-string (mp-or (mp-string "abc") (mp-string "def")) "defabc")
+;; (mp-run-string (mp-or (mp-string "abd") (mp-string "abc")) "abcdef")
+;; (mp-run-string (mp-or (mp-try (mp-string "abd")) (mp-string "abc")) "abcdef")
