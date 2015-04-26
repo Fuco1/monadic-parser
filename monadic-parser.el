@@ -289,6 +289,25 @@ Useful for arbitrary look-ahead."
   "Create a parser matching CHAR."
   (mp-label (mp-satisfies (lambda (x) (eq char x))) (char-to-string char)))
 
+;; Parser u Char
+(defun mp-letter ()
+  "Match any char in [:alpha:]."
+  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:alpha:]]" (char-to-string x)))) "letter"))
+
+(defun mp-digit ()
+  "Match any char in [:digit:]."
+  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:digit:]]" (char-to-string x)))) "digit"))
+
+(defun mp-space ()
+  "Match any char in [:space:]."
+  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:space:]]" (char-to-string x)))) "whitespace"))
+
+(defun mp-spaces ()
+  "Match any sequence of whitespace."
+  (mp-skip-many (mp-space)))
+
+;; Could've been implemented as series of mp-char parsers, but this is
+;; way faster (we don't need to bind the entire chain)
 ;; String -> Parser u String
 (defun mp-string (string)
   "Create a parser matching STRING."
