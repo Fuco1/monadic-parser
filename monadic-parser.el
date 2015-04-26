@@ -79,6 +79,26 @@
   "Run the PARSER on STRING."
   (mp-run parser (mp-state 0 (string-to-list string) nil)))
 
+;; (a -> b) -> Parser u a -> Parser u b
+(defun mp-fmap (f parser)
+  "Apply F to the result of PARSER."
+  (lambda (state)
+    (mp-with-consumed (mp-run parser state)
+      (-lambda ([_Consumed reply])
+        (mp-consumed
+         (mp-with-reply reply
+           (-lambda ([_Ok value state msg])
+             (mp-ok (funcall f value) state msg))
+           (lambda (err)
+             err))))
+      (-lambda ([_Empty reply])
+        (mp-empty
+         (mp-with-reply reply
+           (-lambda ([_Ok value state msg])
+             (mp-ok (funcall f value) state msg))
+           (lambda (err)
+             err)))))))
+
 ;; a -> Parser u a
 (defun mp-return (value)
   "Create a parser returning VALUE while not consuming any input."
