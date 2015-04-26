@@ -387,10 +387,31 @@ Useful for arbitrary look-ahead."
      (t (mp--do-substitute (car things))))))
 
 (defun my-parse-symbol ()
-  (mp-fmap (lambda (x) (intern (apply 'string x))) (mp-many1 (mp-letter))))
+  (mp-fmap
+   (lambda (x) (intern (apply 'string x)))
+   (mp-do
+    (first := (mp-or (mp-letter) (mp-char ?-)))
+    (rest := (mp-many1 (mp-or (mp-letter) (mp-digit) (mp-char ?-))))
+    (mp-return (cons first rest)))))
+
+;; (mp-run-string (my-parse-symbol) "mp-many1 foo")
+
+(defun my-parse-quote ()
+  (mp-do
+   (mp-char ?')
+   (item := (my-parse-lisp-item))
+   (mp-return `(quote ,item))))
+
+(defun my-parse-char ()
+  (mp-do
+   (mp-char ??)
+   (mp-satisfies (lambda (_) t))))
 
 (defun my-parse-integer ()
   (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))
+
+;; (mp-run-string (my-parse-lisp-item) "(defun my-parse-integer ()
+;;   (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))")
 
 (defun my-parse-number ()
   (mp-do
@@ -410,7 +431,11 @@ Useful for arbitrary look-ahead."
    (mp-or
     (my-parse-symbol)
     (my-parse-number)
+    (my-parse-quote)
+    (my-parse-char)
     (my-parse-list))))
+
+;; (mp-run-string (my-parse-list) "(defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))))")
 
 (defun my-parse-list ()
   (mp-do
