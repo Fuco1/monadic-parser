@@ -191,10 +191,10 @@ Useful for arbitrary look-ahead."
   (-lambda ([_State pos (c . cs) user])
     (cond
      ((not c)
-      (mp-empty (mp-error (mp-message pos "end of input" []))))
+      (mp-empty (mp-error (mp-message pos "end of input" nil))))
      ((funcall predicate c)
       (mp-consumed (mp-ok c (mp-state (1+ pos) cs user) (mp-message pos "" nil))))
-     (t (mp-empty (mp-error (mp-message pos (char-to-string c) [])))))))
+     (t (mp-empty (mp-error (mp-message pos (char-to-string c) nil)))))))
 
 ;; Char -> Parser u Char
 (defun mp-char (char)
