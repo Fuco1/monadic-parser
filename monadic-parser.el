@@ -296,7 +296,7 @@ Useful for arbitrary look-ahead."
 
 (defun mp-digit ()
   "Match any char in [:digit:]."
-  (mp-label (mp-satisfies (lambda (x) (and (<= 48 x) (<= 57 x)))) "digit"))
+  (mp-label (mp-satisfies (lambda (x) (and (<= 48 x) (<= x 57)))) "digit"))
 
 (defun mp-space ()
   "Match any whitespace character: space, tab, newline or carriage return."
