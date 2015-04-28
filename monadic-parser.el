@@ -487,7 +487,7 @@ Does not consume any input."
 (defun my-parse-char ()
   (mp-do
    (mp-char ??)
-   (mp-satisfies (lambda (_) t))))
+   (mp-item)))
 
 (defun my-parse-integer ()
   (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))
