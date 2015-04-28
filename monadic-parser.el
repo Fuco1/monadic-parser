@@ -359,6 +359,23 @@ Does not consume any input."
 
 ;; (mp-run-string (mp-not-followed-by (mp-try (mp-string "abc"))) "abd")
 
+(defun mp-option (default parser)
+  "Try to parse PARSER, returning DEFAULT if PARSER fails without consuming input."
+  (mp-or parser (mp-return default)))
+
+;; (mp-run-string (mp-then (mp-string "ab") (mp-option "." (mp-char 59))) "ab;")
+
+(defun mp-optional (parser)
+  "Optionally parse PARSER, discarding its value.
+
+It will parse PARSER or nothing. It only fails if PARSER fails
+after consuming input."
+  (mp-or (mp-then parser (mp-return nil)) (mp-return nil)))
+
+;; (mp-run-string (mp-do (mp-string "foo") (mp-optional (mp-many (mp-char ?-))) (mp-string "bar")) "foo----bar")
+;; (mp-run-string (mp-do (mp-string "foo") (mp-optional (mp-many (mp-char ?-))) (mp-string "bar")) "foo-bar")
+;; (mp-run-string (mp-do (mp-string "foo") (mp-optional (mp-many (mp-char ?-))) (mp-string "bar")) "foobar")
+
 ;; Parser u nil
 (defun mp-end-of-input ()
   "Consume no input and fail everywhere except at the end of input."
