@@ -231,6 +231,31 @@ Useful for arbitrary look-ahead."
 ;; (mp-run-string (mp-or (mp-label (mp-try (mp-then (mp-char ?a) (mp-char ?b))) "ab")
 ;;                       (mp-char ?z)) "abdd")
 
+;; Parser u a -> Parser u a
+(defun mp-look-ahead (parser)
+  "Parse PARSER without consuming any input."
+  (mp-do
+   (state := (mp-get-parser-state))
+   (x := parser)
+   (mp-set-parser-state state)
+   (mp-return x)))
+
+;; (mp-run-string (mp-look-ahead (mp-string "abc")) "abcd")
+;; (mp-run-string (mp-get-parser-state) "abcd")
+
+(defun mp-many-till (parser end)
+  "Parse zero or more occurrences of PARSER until END succeeds.
+
+Return the list of values returned by PARSER."
+  (mp-or
+   (mp-then end (mp-return nil))
+   (mp-do
+    (x := parser)
+    (xs := (mp-many-till parser end))
+    (mp-return (cons x xs)))))
+
+;; (mp-run-string (mp-many-till (mp-item) (mp-char ?$)) "foo bar$ baz")
+
 ;; Message -> String -> Message
 (defun mp--expect (msg expected)
   (-let (([_Message pos input _] msg))
@@ -314,6 +339,32 @@ Useful for arbitrary look-ahead."
   (mp-do
    (mp-many-accum (lambda (_1 _2) nil) nil parser)
    (mp-return nil)))
+
+;; Parser u a
+(defun mp-item ()
+  "Consume one token of input."
+  (mp-satisfies (-const t)))
+
+;; Parser u ()
+(defun mp-not-followed-by (parser)
+  "Succeed when PARSER fails.
+
+Does not consume any input."
+  (mp-try
+   (mp-or
+    (mp-do
+     (x := parser)
+     (-lambda ([_State pos _ _]) (mp-empty (mp-error (mp-message pos x nil)))))
+    (mp-return ()))))
+
+;; (mp-run-string (mp-not-followed-by (mp-try (mp-string "abc"))) "abd")
+
+;; Parser u nil
+(defun mp-end-of-input ()
+  "Consume no input and fail everywhere except at the end of input."
+  (mp-label (mp-not-followed-by (mp-item)) "end of input"))
+
+;; (mp-run-string (mp-or (mp-end-of-input) (mp-char ?b)) "a")
 
 ;; Char -> Parser u Char
 (defun mp-char (char)
