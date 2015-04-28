@@ -457,7 +457,7 @@ Does not consume any input."
                               form])))
   (let ((head (car things)))
     (cond
-     ((eq (cadr head) ':=)
+     ((and (listp head) (eq (cadr head) ':=))
       `(mp-bind
         ,(mp--do-substitute (nth 2 head))
         (-lambda (,(car head))
