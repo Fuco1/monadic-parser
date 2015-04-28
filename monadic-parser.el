@@ -104,6 +104,37 @@
   "Create a parser returning VALUE while not consuming any input."
   (lambda (state) (mp-empty (mp-ok value state (mp-message (mp-state-position state) "" nil)))))
 
+;; (State u -> State u) -> Parser u (State u)
+(defun mp-update-parser-state (fun)
+  "Update the parser state with function FUN."
+  (lambda (state)
+    (let ((new-state (funcall fun state)))
+      (mp-empty (mp-ok new-state new-state (mp-message (mp-state-position new-state) "" nil))))))
+
+;; Parser u (State u)
+(defun mp-get-parser-state ()
+  "Return the internal parser state."
+  (mp-update-parser-state 'identity))
+
+;; State u -> Parser u ()
+(defun mp-set-parser-state (new-state)
+  "Set the internal parser state."
+  (mp-then
+   (mp-update-parser-state (-const new-state))
+   (mp-return nil)))
+
+;; Parser u u
+(defun mp-get-user-state ()
+  "Return the user state."
+  (fmap (-lambda ([_State _ _ user]) user) (mp-get-parser-state)))
+
+;; u -> Parser u ()
+(defun mp-set-user-state (new-user-state)
+  "Set the user state."
+  (mp-then
+   (mp-update-parser-state (-lambda ([_State pos string _]) (mp-state pos string new-user-state)))
+   (mp-return nil)))
+
 ;; Message -> Reply u a -> Reply u a
 (defun mp--merge-error-reply (msg1 reply)
   (mp-with-reply reply
