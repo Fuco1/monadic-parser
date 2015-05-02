@@ -1,7 +1,46 @@
-;; -*- lexical-binding: t -*-
+;;; monadic-parser.el --- Efficient monadic parser. -*- lexical-binding: t -*-
+
+;; Copyright (C) 2015 Matúš Goljer <matus.goljer@gmail.com>
+
+;; Author: Matúš Goljer <matus.goljer@gmail.com>
+;; Maintainer: Matúš Goljer <matus.goljer@gmail.com>
+;; Version: 0.0.1
+;; Created: 2nd May 2015
+;; Package-requires: ((dash "2.10.0"))
+;; Keywords: data
+
+;; This program is free software; you can redistribute it and/or
+;; modify it under the terms of the GNU General Public License
+;; as published by the Free Software Foundation; either version 3
+;; of the License, or (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;;; Code:
+
 (eval-when-compile (require 'cl))
+
+
+;;; Data definitions
 ;; data Message = (Int, String, [String]) -- position, unexpected input, first set (expected inputs)
 (defun mp-message (pos input first)
+  "Create new message instance.
+
+Messages are used to report errors.
+
+POS is the position in the input stream where the message originated.
+
+INPUT is the unexpected input we have encountered.
+
+FIRST is the first-set, in other words, the set of expected tokens."
   (vector 'Message pos input first))
 (defun mp-message-pos (msg)
   (aref msg 1))
@@ -12,6 +51,18 @@
 
 ;; data State u = (Int, String, u) -- position in string, rest, user state
 (defun mp-state (pos string user)
+  "Create new state instance.
+
+State contains all the necessary information for parsing.
+
+This is an opaque type, users should not directly inspect it.
+
+POS is the current position in the input stream.
+
+STRING is the rest of the input stream.
+
+USER is arbitrary user-supplied state.  The state is passed in
+the background during the entire parsing computation."
   (vector 'State pos string user))
 (defun mp-state-position (state)
   (aref state 1))
@@ -20,14 +71,34 @@
 (defun mp-state-user (state)
   (aref state 3))
 
+;; data Reply u a =  OK u a Message | Error
 ;; data Error = Message
 (defun mp-error (msg)
+  "Create new error instance.
+
+Error is the reply of the parser when it can't proceed because it
+has encountered unexpected input.
+
+MSG is a message instance, see `mp-message'."
   (vector 'Error msg))
 (defun mp-error-message (err)
   (aref err 1))
 
 ;; data OK u a = (a, State u, Message)
 (defun mp-ok (value state msg)
+  "Create new ok instance.
+
+OK is the reply of the parser when it proceeded and successfully
+parsed some input
+
+Beware, this does not mean it has consumed input, it can marely
+be a reply to a look-ahead assertion etc.
+
+VALUE is the return value of the parser.
+
+STATE is the new state, see `mp-state'.
+
+MSG is a message, see `mp-message'."
   (vector 'Ok value state msg))
 (defun mp-ok-value (ok)
   (aref ok 1))
@@ -38,13 +109,38 @@
 
 ;; We will not wrap the binary constructors in an additional layer
 ;; (the "data" type).  We are simply expecting everything to fit
-;; properly :D  See also Reply
+;; properly :D  See also Reply (Error or Ok)
 ;; data Consumed a = Consumed a | Empty a
-(defun mp-consumed (value)
-  (vector 'Consumed value))
-(defun mp-empty (value)
-  (vector 'Empty value))
+(defun mp-consumed (reply)
+  "Create new consumed instance.
+
+A result _consumed_ means that the parser consumed portion of the
+input.  We do not allow backtracking once part of input stream is
+consumed.  If you need arbitrary look-ahead, you should wrap your
+parsers with `mp-look-ahead' or `mp-try' combinators.
+
+REPLY is an instance of `mp-error' or `mp-ok'."
+  (vector 'Consumed reply))
+(defun mp-empty (reply)
+  "Create new consumed instance.
+
+A result _empty_ means that the parser did not consume any input.
+Since we do not allow backtracking once part of input stream is
+consumed, this is used to distinguish look-ahead.  By default,
+the parsers are LL(1), that is, they allow look ahead of one
+token before consuming it.
+
+REPLY is an instance of `mp-error' or `mp-ok'."
+  (vector 'Empty reply))
+
 (defun mp-with-consumed (consumed-or-empty consumed-code empty-code)
+  "Helper function to deal with results.
+
+CONSUMED-OR-EMPTY is an instace of `mp-consumed' or `mp-empty'.
+Based on the type, CONSUMED-CODE or EMPTY-CODE is executed.
+
+The arguments CONSUMED-CODE and EMPTY-CODE are lambdas/functions
+which allows for \"lazy\" evaluations of the branches."
   (declare (indent 1))
   (-let* (([type] consumed-or-empty))
     (cond
@@ -54,8 +150,14 @@
       (funcall empty-code consumed-or-empty))
      (t (error "Invalid type %s, expected Consumed or Empty" type)))))
 
-;; data Reply u a =  OK u a Message | Error
 (defun mp-with-reply (ok-or-error ok-code error-code)
+  "Helper function to deal with replies.
+
+OK-OR-ERROR is an instace of `mp-ok' or `mp-error'.
+Based on the type, OK-CODE or ERROR-CODE is executed.
+
+The arguments OK-CODE or ERROR-CODE are lambdas/functions which
+allows for \"lazy\" evaluations of the branches."
   (declare (indent 1))
   (-let* (([type] ok-or-error))
     (cond
@@ -65,23 +167,34 @@
       (funcall error-code ok-or-error))
      (t (error "Invalid type %s, expected Ok or Error" type)))))
 
-;; Finally, the parser type is.  We will omit the wrapper and just use
+;; Finally, the parser type.  We will omit the wrapper and just use
 ;; lambda directly
 ;; data Parser u a = State u -> Reply u a
 
 ;; Parser u a -> State u -> Reply u a
 (defun mp-run (parser state)
-  "Run the PARSER on STATE."
+  "Run the PARSER on STATE.
+
+This function is the most generic way to run a parser.  The
+return value is either `mp-consumed' or `mp-empty'."
   (funcall parser state))
 
 ;; Parser u a -> String -> Reply u a
 (defun mp-run-string (parser string)
-  "Run the PARSER on STRING."
+  "Run the PARSER on STRING.
+
+This works like `mp-run' but automatically wraps `string' in a
+default `mp-state'.
+
+The return value is either `mp-consumed' or `mp-empty'."
   (mp-run parser (mp-state 0 (string-to-list string) nil)))
 
 ;; (a -> b) -> Parser u a -> Parser u b
 (defun mp-fmap (f parser)
-  "Apply F to the result of PARSER."
+  "Apply F to the result of PARSER.
+
+This function creates a new parser which behaves just like PARSER
+but the return value is run through F."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
       (-lambda ([_Consumed reply])
@@ -125,18 +238,27 @@
 
 ;; Parser u u
 (defun mp-get-user-state ()
-  "Return the user state."
+  "Return the user state.
+
+See `mp-set-user-state'."
   (fmap (-lambda ([_State _ _ user]) user) (mp-get-parser-state)))
 
 ;; u -> Parser u ()
 (defun mp-set-user-state (new-user-state)
-  "Set the user state."
+  "Set the user state.
+
+This and `mp-get-user-state' allows the user to thread arbitrary
+state through the computation in a pure way.
+
+When you update the state, *you must never change the value by
+side effect*, otherwise backtracking will break horribly."
   (mp-then
    (mp-update-parser-state (-lambda ([_State pos string _]) (mp-state pos string new-user-state)))
    (mp-return nil)))
 
 ;; Message -> Reply u a -> Reply u a
 (defun mp--merge-error-reply (msg1 reply)
+  "Merge the message MSG1 into the message tracked inside REPLY."
   (mp-with-reply reply
     (-lambda ([_Ok value state msg2])
       (mp-ok value state (mp--merge-messages msg1 msg2)))
@@ -145,13 +267,18 @@
 
 ;; Message -> Message -> Message
 (defun mp--merge-messages (msg1 msg2)
+  "Merge the first sets of MSG1 and MSG2."
   (-let* (([_Message _   _      first1] msg1)
           ([_Message pos input first2] msg2))
     (mp-message pos input (-concat first1 first2))))
 
 ;; Parser u a -> (a -> Parser u b) -> Parser u b
 (defun mp-bind (parser fun)
-  "Use the result of first PARSER to construct another using FUN."
+  "Use the result of first PARSER to construct another using FUN.
+
+First, run PARSER.  Extract its return value and pass it into
+FUN.  FUN should return a new parser, using or ignoring the bound
+value.  The state is passed in the background automatically."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
       (-lambda ([_Consumed reply])
@@ -180,11 +307,18 @@
 
 ;; All this fuss around or is due to need of lazy evaluation of the
 ;; rest of the parsers.  We must not evaluate them right away in the
-;; case first parser succeeds.
+;; case first parser succeeds.  For example, if inside a parser `foo'
+;; we did (mp-or (bar) (foo)), this would lead to infinite recursion
+;; because (foo) would try to evaluate to a function which would call
+;; the (mp-or ...) which would try to evaluate (foo) ...  You can
+;; still crash your stack if you let-bind or do other unexpected
+;; things :/
 
 ;; [Parser u a] -> Parser u a
 (defmacro mp-or (&rest parsers)
-  "Try parsers in sequence until some consumes input or succeeds."
+  "Try PARSERS in sequence until some consumes input or succeeds.
+
+Return the value of the first parser that consumed input or succeeded."
   `(mp--or1 ,parsers))
 
 (defmacro mp--or1 (parsers)
@@ -233,7 +367,7 @@ Useful for arbitrary look-ahead."
 
 ;; Parser u a -> Parser u a
 (defun mp-look-ahead (parser)
-  "Parse PARSER without consuming any input."
+  "Run PARSER without consuming any input."
   (mp-do
    (state := (mp-get-parser-state))
    (x := parser)
@@ -258,12 +392,18 @@ Return the list of values returned by PARSER."
 
 ;; Message -> String -> Message
 (defun mp--expect (msg expected)
+  "Set the first set to a singleton set containing EXPECTED."
   (-let (([_Message pos input _] msg))
     (mp-message pos input (list expected))))
 
 ;; Parser u a -> String -> Parser u a
 (defun mp-label (parser expected)
-  "Label the parser."
+  "Label the parser.
+
+The parsers automatically collect the possible following tokens
+into a set which is then displayed to the user.  This label is
+used as an \"expected\" string to identify the parser in the
+first-set."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
       (lambda (consumed) consumed)
@@ -277,9 +417,6 @@ Return the list of values returned by PARSER."
 ;; (a -> Bool) -> Parser u a
 (defun mp-satisfies (predicate)
   "Construct a parser which consumes one item and returns it if it satisfies PREDICATE."
-  ;; (mp-item) eats an item, so the function we bind to should create
-  ;; a parser which does not consume any input, returning value based
-  ;; on the predicate.  mp-return does the job!
   (-lambda ([_State pos (c . cs) user])
     (cond
      ((not c)
@@ -290,6 +427,13 @@ Return the list of values returned by PARSER."
      (t (mp-empty (mp-error (mp-message pos (char-to-string c) nil)))))))
 
 (defun mp--walk-many (accumulator default parser ok)
+  "Read tokens as long as PARSER succeeds.
+
+Accumulate results using the funciton ACCUMULATOR, with DEFAULT as the initial value.
+
+OK is the OK reply after first token has been consumed.
+
+This function is only called if we consumed at least one token."
   (-let* (([_Ok value state _msg] ok)
           (re (funcall accumulator value default)))
     (cl-do ((result (mp-run parser state) (mp-run parser state)))
@@ -308,7 +452,11 @@ Return the list of values returned by PARSER."
 
 ;; (a -> b -> b) -> b -> Parser u a -> Parser u b
 (defun mp-many-accum (accumulator default parser)
-  "Match PARSER zero or more times and accumulate its results using ACCUMULATOR."
+  "Match PARSER zero or more times and accumulate its results using ACCUMULATOR.
+
+DEFAULT is the initial value.
+
+Notice the similarity with folding/reducing."
   (lambda (state)
     (mp-with-consumed (mp-run parser state)
       (-lambda ([_Consumed reply])
@@ -328,7 +476,7 @@ Return the list of values returned by PARSER."
   (mp-fmap 'nreverse (mp-many-accum 'cons nil parser)))
 
 (defun mp-many1 (parser)
-  "Match PARSER zero or more times and return its results as list."
+  "Match PARSER one or more times and return its results as list."
   (mp-do
    (x := parser)
    (xs := (mp-many parser))
@@ -469,7 +617,27 @@ after consuming input."
 ;;                "abcd")
 
 (defmacro mp-do (&rest things)
-  "Compose parsers and forms, binding variables automatically."
+  "Compose parsers and forms, binding variables automatically.
+
+THINGS is a list of PARSER-FORM, ASSIGN-FORM, LET-FORM or IF-FORM.
+
+- PARSER-FORM is either a symbol evaluating to a parser or a
+function returning a parser.
+
+- ASSIGN-FORM is a list of the structure (PATTERN :=
+PARSER-FORM).  It binds the result value of the parser returned
+by PARSER-FORM using PATTERN specification.
+
+PATTERN uses the same syntax as `-let' from dash.el library.
+
+All parsers after an ASSIGN-FORM have access to the bound variable.
+
+- LET-FORM is a just like regular `let' of elisp but supports
+binding patterns of `-let' automatically.  Note that the LET-FORM
+must evaluate to a parser.
+
+- IF-FORM is just a regular `if' from elisp, but both branches must
+evaluate to parsers."
   (declare (debug (&rest [&or (sexp mp--edebug-is-assign form)
                               form])))
   (let ((head (car things)))
@@ -485,106 +653,5 @@ after consuming input."
         (mp-do ,@(cdr things))))
      (t (mp--do-substitute (car things))))))
 
-(defun my-parse-symbol ()
-  (mp-fmap
-   (lambda (x) (intern (apply 'string x)))
-   (mp-do
-    (first := (mp-or (mp-letter) (mp-char ?-)))
-    (rest := (mp-many1 (mp-or (mp-letter) (mp-digit) (mp-char ?-))))
-    (mp-return (cons first rest)))))
-
-;; (mp-run-string (my-parse-symbol) "mp-many1 foo")
-
-(defun my-parse-quote ()
-  (mp-do
-   (mp-char ?')
-   (item := (my-parse-lisp-item))
-   (mp-return `(quote ,item))))
-
-(defun my-parse-char ()
-  (mp-do
-   (mp-char ??)
-   (mp-item)))
-
-(defun my-parse-integer ()
-  (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))
-
-;; (mp-run-string (my-parse-lisp-item) "(defun my-parse-integer ()
-;;   (mp-fmap (lambda (x) (string-to-number (apply 'string x))) (mp-many1 (mp-digit))))")
-
-(defun my-parse-number ()
-  (mp-do
-   (integer := (mp-many1 (mp-digit)))
-   (decimal := (mp-or
-                (mp-then (mp-char ?.) (mp-many1 (mp-digit)))
-                (mp-return nil)))
-   (mp-return (if decimal
-                  (string-to-number (concat integer "." decimal))
-                (string-to-number (apply 'string integer))))))
-
-;; (mp-run-string (my-parse-number) "10.34u")
-
-(defun my-parse-lisp-item ()
-  (mp-do
-   (mp-spaces)
-   (mp-or
-    (my-parse-symbol)
-    (my-parse-number)
-    (my-parse-quote)
-    (my-parse-char)
-    (my-parse-list))))
-
-;; (mp-run-string (my-parse-list) "(defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))) (defun my-parse-lisp-item () (mp-do (mp-spaces) (mp-or (my-parse-symbol) (my-parse-number) (my-parse-list)))))")
-
-(defun my-parse-list ()
-  (mp-do
-   (mp-char ?\()
-   (s := (mp-many (my-parse-lisp-item)))
-   (mp-char ?\))
-   (mp-return s)))
-
-;; (mp-run-string (mp-do
-;;                 (assign c (mp-char ?a))
-;;                 (assign d (mp-char ?b))
-;;                 (mp-return (string c d)))
-;;                "abcd")
-
-;; (mp-run-string (my-parse-lisp-item) "(a(a!))")
-;; (mp-run-string (my-parse-list) "(a(!))")
-;; (mp-run-string (my-parse-list) "()")
-;; (mp-run-string (my-parse-list) "(a(a[]c))")
-;; (mp-run-string (my-parse-list) "(a (a [] c))")
-;; (mp-run-string (my-parse-symbol) "abc")
-
-;; (mp-run-string (my-parse-list) "(aasd (asd 12 bsasd 20.45) das)")
-
-;; (mp-run-string (my-parse-number) "20.456")
-
-;; (mp-run-string (mp-many (mp-char ?a)) "aaaab")
-
-;; (mp-run-string (mp-do
-;;                 c <- (mp-char ?a)
-;;                 d <- (mp-char ?b)
-;;                 (let ((r (string c d)))
-;;                   (mp-return r)))
-;;                "abcd")
-
-;; (mp-run-string (mp-do
-;;                 c <- (mp-char ?a)
-;;                 d <- (mp-char ?b)
-;;                 (mp-return (string c d)))
-;;                "abcd")
-
-;; (mp-run-string (mp-do
-;;                 [a &rest b] <- (mp-string "ab")
-;;                 c <- (mp-char ?c)
-;;                 (mp-return (format "%c%s%c" a b c)))
-;;                "abcd")
-
-;; ;; (mp-run-string (mp-char ?a) "abcd")
-;; ;; (mp-run-string (mp-then (mp-char ?a) (mp-or (mp-char ?c) (mp-char ?b))) "abcd")
-;; ;; (mp-run-string (mp-string "abd") "abda")
-;; (mp-run-string (mp-or (mp-string "abc") (mp-string "def")) "abcdef")
-;; (mp-run-string (mp-or (mp-string "abc") (mp-string "def")) "defabc")
-;; (mp-run-string (mp-or (mp-string "abd") (mp-string "abc")) "abcdef")
-;; (mp-run-string (mp-or (mp-try (mp-string "abd")) (mp-string "abc")) "abcdef")
+(provide 'monadic-parser)
+;;; monadic-parser.el ends here
