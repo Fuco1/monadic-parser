@@ -538,8 +538,8 @@ after consuming input."
 
 ;; Parser u Char
 (defun mp-letter ()
-  "Match any char in [:alpha:]."
-  (mp-label (mp-satisfies (lambda (x) (eq (char-syntax x) ?w))) "letter"))
+  "Match any letter character"
+  (mp-label (mp-satisfies (lambda (x) (string-match-p "[[:alpha:]]" (char-to-string x)))) "letter"))
 
 (defun mp-digit ()
   "Match any char in [:digit:]."
